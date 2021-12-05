@@ -1,5 +1,4 @@
 ---
-# title: "Week 2 Assignment"
 title: "Report of NYPD Shooting Incident"
 output: html_document
 ---
