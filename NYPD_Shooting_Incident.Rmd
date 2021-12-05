@@ -149,7 +149,7 @@ ggplot(map_data, aes(x=Longitude, y=Latitude, color=JURISDICTION)) +
 
 ## Profile of Perpetrator And Victim
 
-
+In this section, I will show the features of perpetrator and victims. Through the heatmaps, around 50% of shooting incidents were related with black people.
 
 ### Profile of Perpetrator
 
@@ -229,13 +229,13 @@ ggplot(perp_vic_race,
 
 ```
 
-
-
 ## Prediction Murder
 
-If we can predict 
+If we can predict a shooting incident will occur, and will it cause any person death, then NYPD can arrange more police officers to patrol at the specific time and place.
 
 ### Ratio of Murder
+Before building a model, it is helpful to know the ratio of murder. Definitely, the ratio is 19%, which means the data is imbalanced.
+
 ```{r death_ratio}
 
 murder_flag <- copy(data) %>% 
@@ -249,12 +249,10 @@ ggplot(murder_flag, aes(x=STATISTICAL_MURDER_FLAG,
                         y=INCIDENT)) + 
   geom_col(fill="#56B3F8")
 
-
 ```
 
 
 ### Prediction
-
 
 ```{r prediction}
 
@@ -315,7 +313,7 @@ confusionMatrix(pred, test_true)
 ```
 
 
-## Conclusion
+## Conclusion And Bias Detection
 
 According to the report, the shooting incidents usually happened in specific borough by black people, but we couldn't say black people tend to commit a shooting incident. It is obvious that the data source was incomplete and had bias. If we could add more data into this project, like economy, salary, and living quality, the conclusion would be more reasonable and convincible.
 
