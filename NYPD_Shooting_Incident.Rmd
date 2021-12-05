@@ -5,20 +5,6 @@ output: html_document
 ---
 
 
-<!-- Worklist -->
-<!-- >> Set relative path -->
-<!-- >> Remove Output of library part -->
-<!-- >> Add the topic interest me -->
-<!-- >> Add code of correlation and model  -->
-<!-- >> Indicate Bias -->
-
-
-<!-- Create a video in .mp4 format in which you present your "NYPD Shooting Incident Data Report" from Week 3 in ten minutes or less. The project should be NYPD Shooting Incident Data (Historic) from the website:https://catalog.data.gov/datase You may re-use what you did for the assignments in Week 3 if you want to. Be sure to use the presentation skills we discussed in the lectures. -->
-
-<!-- Put your reproducible document in your github account and provide a link to that document. Your peers should be able to download and knit your document without errors. -->
-
-
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
@@ -86,7 +72,6 @@ data <- read.csv(paste0(getwd(), '/NYPD_Shooting_Incident_Data__Historic_.csv'))
 
 
 ## Trend of Incidents
-
 First, I was curious about the trend of shooting incidents. The number of incidents decreased before 2020, however, increased dramatically in 2020.
 
 
@@ -118,8 +103,9 @@ line_chart_data %>%
 
 ```
 
+## When The Shooting Incidents Occurred
+It's obvious that most of shooting incidents occurred in night, and the peak was around 11 P.M.
 
-## Hour
 ```{r}
 occur_hour <- copy(data) %>% 
   .[, .(INCIDENT = sum(INCIDENT)),
@@ -129,10 +115,23 @@ occur_hour <- copy(data) %>%
 
 ggplot(data=occur_hour, aes(x = OCCUR_HOUR, y = INCIDENT)) + 
   geom_col(fill="#56B3F8")
-  # geom_histogram(stat = 'identity')
+
 ```
 
-## Map
+
+## Where The Shooting Incidents Occurred
+
+I have two plots to show where the shooting incidents occurred. The first one is a histogram by borough, and the second one is a scatter plot by longtitude and latitude.
+
+```{r boro_hist}
+boro_incident <- copy(data) %>% 
+  .[, .(INCIDENT = sum(INCIDENT)), by = .(BORO)]
+
+ggplot(data, aes(x=BORO, y=INCIDENT)) + 
+  geom_col(fill="#56B3F8")
+```
+
+
 ```{r map}
 map_data <- copy(data) %>% 
   .[!is.na(JURISDICTION_CODE), ] %>% 
@@ -144,27 +143,15 @@ map_data <- copy(data) %>%
 
 ggplot(map_data, aes(x=Longitude, y=Latitude, color=JURISDICTION)) + 
   geom_point(size=0.2)
-# +
-#   theme(legend.position="top")
+
 ```
-
-
-```{r}
-boro_incident <- copy(data) %>% 
-  .[, .(INCIDENT = sum(INCIDENT)), by = .(BORO)]
-
-ggplot(data, aes(x=BORO, y=INCIDENT)) + 
-  geom_col(fill="#56B3F8")
-  # geom_histogram(stat = 'identity')
-```
-
 
 
 ## Profile of Perpetrator And Victim
+
+
+
 ### Profile of Perpetrator
-
-Second, I was interested with the age of perpetrator, so I plotted the percentage of each age group with a pie chart. 11618 rows was excluded because of untidy.
-
 
 ```{r prep}
 
@@ -244,9 +231,11 @@ ggplot(perp_vic_race,
 
 
 
-## Prediction
-### Ratio of Murder
+## Prediction Murder
 
+If we can predict 
+
+### Ratio of Murder
 ```{r death_ratio}
 
 murder_flag <- copy(data) %>% 
@@ -286,10 +275,8 @@ dummy_data <- dummy_data %>% setDT()
 
 
 # Standardization Data
-# https://www.pluralsight.com/guides/normalizing-data-r
 norm_data <- preProcess(dummy_data, method=c("range"))
 norm_data <- predict(norm_data, dummy_data)
-
 
 # Split train data and test data
 train_index <- sample(seq_len(nrow(norm_data)),
@@ -301,7 +288,6 @@ test_var <- test %>%
   .[, -c('STATISTICAL_MURDER_FLAG'), with=FALSE]
 
 test_true <- as.factor(test$STATISTICAL_MURDER_FLAG) 
-
 
 # Handel Imbalanced Data
 table(train$STATISTICAL_MURDER_FLAG)
