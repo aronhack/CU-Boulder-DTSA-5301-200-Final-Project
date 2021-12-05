@@ -1,0 +1,340 @@
+---
+# title: "Week 2 Assignment"
+title: "Report of NYPD Shooting Incident"
+output: html_document
+---
+
+
+<!-- Worklist -->
+<!-- >> Set relative path -->
+<!-- >> Remove Output of library part -->
+<!-- >> Add the topic interest me -->
+<!-- >> Add code of correlation and model  -->
+<!-- >> Indicate Bias -->
+
+
+<!-- Create a video in .mp4 format in which you present your "NYPD Shooting Incident Data Report" from Week 3 in ten minutes or less. The project should be NYPD Shooting Incident Data (Historic) from the website:https://catalog.data.gov/datase You may re-use what you did for the assignments in Week 3 if you want to. Be sure to use the presentation skills we discussed in the lectures. -->
+
+<!-- Put your reproducible document in your github account and provide a link to that document. Your peers should be able to download and knit your document without errors. -->
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+## Data Source
+
+The dataset *NYPD Shooting Incident Data (Historic)* was downloaded from [https://catalog.data.gov/dataset](https://catalog.data.gov/dataset). 
+
+
+## Objective
+The topic of this report is to show the whole picture of shooting incidents, including the trend, occurring time, occurring place, and profile of perpetrator and victims. At the end of the report, a SVM model is applied to forecast the victim's death or not.
+
+
+## Import Library
+```{r import_library, message=FALSE, warning=FALSE}
+
+# R ver 4.1.2
+# RStudio ver 2021.09.1
+library(data.table)  # ver 1.14.2
+library(dplyr)       # ver 1.0.7
+library(lubridate)   # ver 1.8.0
+library(stringr)     # ver 1.4.0
+library(ggplot2)     # ver 3.3.5
+library(knitr)       # ver 1.36
+library(caret)       # ver 6.0-81
+library(ROSE)        # ver 0.0-4
+library(e1071)       # ver 1.7-1
+
+
+# Remove scientific notation
+options(scipen = 100)
+
+```
+
+## Clean Data
+
+This dataset has 23,568 rows, and some columns contains na or blank values, like JURISDICTION_CODE and PERP_AGE_GROUP.
+
+```{r clean_data}
+
+data <- read.csv(paste0(getwd(), '/NYPD_Shooting_Incident_Data__Historic_.csv')) %>% 
+  setDT() %>% 
+  .[, ':='(X_COORD_CD = as.numeric(X_COORD_CD),
+           Y_COORD_CD = as.numeric(Y_COORD_CD),
+           JURISDICTION_CODE = as.factor(JURISDICTION_CODE),
+           PRECINCT = as.factor(PRECINCT),
+           STATISTICAL_MURDER_FLAG = ifelse(STATISTICAL_MURDER_FLAG=='true',
+                                            1, 0))
+    ] %>% 
+  .[, ':='(INCIDENT = 1,
+           YEAR = substr(OCCUR_DATE, 7, 11),
+           MONTH = substr(OCCUR_DATE, 1, 2),
+           DAY = substr(OCCUR_DATE, 4, 5),
+           OCCUR_HOUR = substr(OCCUR_TIME, 1, 2))
+    ] %>% 
+  .[, ':='(YEAR = as.integer(YEAR),
+           MONTH = as.integer(MONTH),
+           DAY = as.integer(DAY),
+           OCCUR_HOUR = as.integer(OCCUR_HOUR),
+           YEAR_MONTH = paste0(YEAR, MONTH),
+           OCCUR_DATE = ymd(paste0(YEAR, MONTH, DAY)))
+    ]
+```
+
+
+## Trend of Incidents
+
+First, I was curious about the trend of shooting incidents. The number of incidents decreased before 2020, however, increased dramatically in 2020.
+
+
+```{r trend}
+
+# 3.1 Trend of Incidents
+line_chart_data <- copy(data) %>%
+  .[, .(INCIDENT = sum(INCIDENT)), by = .(YEAR_MONTH)] %>%
+  setorder(YEAR_MONTH)
+  
+# Set X axis
+year_month <- line_chart_data$YEAR_MONTH
+x_names = c()
+
+for(i in 1:length(line_chart_data$YEAR_MONTH)){
+  if(i %% 30 == 0 || i == 1){
+    x_names[i] <- year_month[i]
+  } else{
+    x_names[i] <- ""
+  }
+}
+
+# Plot
+line_chart_data %>% 
+  ggplot( aes(x=YEAR_MONTH, y=INCIDENT, group = 1)) +
+  geom_line(size=0.3) +
+  scale_x_discrete(name="YEAR_MONTH", 
+                   labels=x_names)
+
+```
+
+
+## Hour
+```{r}
+occur_hour <- copy(data) %>% 
+  .[, .(INCIDENT = sum(INCIDENT)),
+    by = .(OCCUR_HOUR)
+    ] %>% 
+  setorder(OCCUR_HOUR)
+
+ggplot(data=occur_hour, aes(x = OCCUR_HOUR, y = INCIDENT)) + 
+  geom_col(fill="#56B3F8")
+  # geom_histogram(stat = 'identity')
+```
+
+## Map
+```{r map}
+map_data <- copy(data) %>% 
+  .[!is.na(JURISDICTION_CODE), ] %>% 
+  .[, ':='(JURISDICTION = case_when(
+    JURISDICTION_CODE == "0" ~ "Patrol",
+    JURISDICTION_CODE == "1" ~ "Transit",
+    JURISDICTION_CODE == "2" ~ "Housing"))
+    ]
+
+ggplot(map_data, aes(x=Longitude, y=Latitude, color=JURISDICTION)) + 
+  geom_point(size=0.2)
+# +
+#   theme(legend.position="top")
+```
+
+
+```{r}
+boro_incident <- copy(data) %>% 
+  .[, .(INCIDENT = sum(INCIDENT)), by = .(BORO)]
+
+ggplot(data, aes(x=BORO, y=INCIDENT)) + 
+  geom_col(fill="#56B3F8")
+  # geom_histogram(stat = 'identity')
+```
+
+
+
+## Profile of Perpetrator And Victim
+### Profile of Perpetrator
+
+Second, I was interested with the age of perpetrator, so I plotted the percentage of each age group with a pie chart. 11618 rows was excluded because of untidy.
+
+
+```{r prep}
+
+perp <- copy(data) %>% 
+  .[!PERP_RACE %in% c("", "UNKNOWN") 
+    & !PERP_AGE_GROUP %in% c("", "UNKNOWN")
+    & PERP_RACE != "", 
+    ] %>% 
+  .[str_detect(PERP_AGE_GROUP, "<") 
+    | str_detect(PERP_AGE_GROUP, "-")
+    | str_detect(PERP_AGE_GROUP, "\\+"), ] %>% 
+  .[, .(INCIDENT = sum(INCIDENT)),
+    by = .(PERP_RACE, PERP_AGE_GROUP)
+    ] %>% 
+  .[, ':='(TOTAL = sum(INCIDENT))] %>% 
+  .[, ':='(INCIDENT_RATIO = INCIDENT / TOTAL)]
+
+
+ggplot(perp, aes(x = PERP_RACE, y = PERP_AGE_GROUP, fill = INCIDENT_RATIO)) +
+  geom_tile(aes(fill = INCIDENT_RATIO)) +
+  guides(x = guide_axis(angle = 15)) +
+  theme(plot.margin=unit(c(0.5,0,0.5,3.5), "cm"))
+
+```
+
+### Profile of Victim
+
+```{r victim}
+
+# 4.2 Victim
+victim <- copy(data) %>% 
+  .[!VIC_RACE %in% c("", "UNKNOWN") 
+    & !VIC_AGE_GROUP %in% c("", "UNKNOWN"), ] %>% 
+  .[str_detect(VIC_AGE_GROUP, "<") 
+    | str_detect(VIC_AGE_GROUP, "-")
+    | str_detect(VIC_AGE_GROUP, "\\+"), ] %>% 
+  .[, .(INCIDENT = sum(INCIDENT)),
+    by = .(VIC_RACE, VIC_AGE_GROUP)
+    ] %>% 
+  .[, ':='(TOTAL = sum(INCIDENT))] %>% 
+  .[, ':='(INCIDENT_RATIO = INCIDENT / TOTAL)]
+
+ggplot(victim, aes(x = VIC_RACE, y = VIC_AGE_GROUP, fill = INCIDENT_RATIO)) +
+  geom_tile(aes(fill = INCIDENT_RATIO)) +
+  guides(x = guide_axis(angle = 15)) +
+  theme(plot.margin=unit(c(0.5,0,0.5,3.5), "cm"))
+
+```
+
+### Common Factors of Perpetrator And Victim
+
+```{r prep_victim}
+
+# 4.2 Perpetrator And Victim
+perp_vic_race <- copy(data) %>% 
+  .[!VIC_RACE %in% c("", "UNKNOWN") 
+    & !VIC_AGE_GROUP %in% c("", "UNKNOWN")
+    & PERP_RACE != "", 
+    ] %>% 
+  .[str_detect(VIC_AGE_GROUP, "<") 
+    | str_detect(VIC_AGE_GROUP, "-")
+    | str_detect(VIC_AGE_GROUP, "\\+"), ] %>% 
+  .[, .(INCIDENT = sum(INCIDENT)),
+    by = .(PERP_RACE, VIC_RACE)
+    ] %>% 
+  .[, ':='(TOTAL = sum(INCIDENT))] %>% 
+  .[, ':='(INCIDENT_RATIO = INCIDENT / TOTAL)]
+
+ggplot(perp_vic_race, 
+       aes(x = PERP_RACE, y = VIC_RACE, fill = INCIDENT_RATIO)) +
+  geom_tile(aes(fill = INCIDENT_RATIO)) +
+  guides(x = guide_axis(angle = 15)) +
+  guides(x = guide_axis(angle = 15)) +
+  theme(plot.margin=unit(c(0.5,0,0.5,0.5), "cm"))
+
+```
+
+
+
+## Prediction
+### Ratio of Murder
+
+```{r death_ratio}
+
+murder_flag <- copy(data) %>% 
+  .[, .(INCIDENT = sum(INCIDENT))
+    , by = .(STATISTICAL_MURDER_FLAG)
+  ] %>% 
+  .[, ':='(STATISTICAL_MURDER_FLAG = ifelse(STATISTICAL_MURDER_FLAG==0, 
+                                            'N', 'Y'))]
+
+ggplot(murder_flag, aes(x=STATISTICAL_MURDER_FLAG, 
+                        y=INCIDENT)) + 
+  geom_col(fill="#56B3F8")
+
+
+```
+
+
+### Prediction
+
+
+```{r prediction}
+
+# SVM Model
+model_data <- data %>%
+  .[, .(BORO, JURISDICTION_CODE, OCCUR_HOUR,
+        PERP_RACE, VIC_RACE, STATISTICAL_MURDER_FLAG,
+        Latitude, Longitude, DAY, MONTH)
+    ]
+
+dummy_data <- copy(model_data) %>% 
+  .[PERP_RACE != "" & !is.na(JURISDICTION_CODE)
+    & !is.na(OCCUR_HOUR), ]
+
+dmy <- dummyVars(" ~ .", data = dummy_data)
+dummy_data <- data.frame(predict(dmy, newdata=dummy_data))
+dummy_data <- dummy_data %>% setDT()
+
+
+# Standardization Data
+# https://www.pluralsight.com/guides/normalizing-data-r
+norm_data <- preProcess(dummy_data, method=c("range"))
+norm_data <- predict(norm_data, dummy_data)
+
+
+# Split train data and test data
+train_index <- sample(seq_len(nrow(norm_data)),
+                      size = 0.95 * nrow(norm_data))
+
+train <- norm_data[train_index, ]
+test <- norm_data[-train_index, ]
+test_var <- test %>% 
+  .[, -c('STATISTICAL_MURDER_FLAG'), with=FALSE]
+
+test_true <- as.factor(test$STATISTICAL_MURDER_FLAG) 
+
+
+# Handel Imbalanced Data
+table(train$STATISTICAL_MURDER_FLAG)
+balenced_train <- ovun.sample(STATISTICAL_MURDER_FLAG ~ .,
+                             data = train,
+                             method = "over")$data
+
+balenced_train <- as.data.frame(balenced_train) %>% 
+  setDT()
+
+table(balenced_train$STATISTICAL_MURDER_FLAG)
+
+
+# Build a SVM model
+model <- svm(STATISTICAL_MURDER_FLAG~., data = balenced_train,
+             type = 'C-classification',
+             kernel = "linear", scale = FALSE)
+
+pred <- predict(model, test_var, na.action = na.pass)
+pred <- predict(model, test_var)
+
+confusionMatrix(pred, test_true)
+
+
+```
+
+
+## Conclusion
+
+According to the report, the shooting incidents usually happened in specific borough by black people, but we couldn't say black people tend to commit a shooting incident. It is obvious that the data source was incomplete and had bias. If we could add more data into this project, like economy, salary, and living quality, the conclusion would be more reasonable and convincible.
+
+<br>
+<br>
+<br>
+<br>
+
